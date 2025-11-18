@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
 import { Product, Transaction, CartItem, PaymentMethod } from '../types';
-import { v4 as uuidv4 } from 'uuid';
 import { ReceiptIcon } from './icons/ReceiptIcon';
 import { SearchIcon } from './icons/SearchIcon';
 

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { User, BulletinMessage, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Transaction } from '../types';
 import { DeleteIcon } from './icons/DeleteIcon';
 import { CalendarDaysIcon } from './icons/CalendarDaysIcon';
@@ -127,16 +127,17 @@ const HomePage: React.FC<HomePageProps> = ({
     };
 
     // Drag and Drop Handlers
-    const handleDragStart = (e: React.DragEvent<HTMLDivElement>, position: number) => {
+    // Note: We prefix the 'e' argument with '_' to tell TypeScript we are intentionally ignoring it
+    const handleDragStart = (_e: React.DragEvent<HTMLDivElement>, position: number) => {
         dragItem.current = position;
         // e.dataTransfer.effectAllowed = "move"; // Optional visual
     };
 
-    const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, position: number) => {
+    const handleDragEnter = (_e: React.DragEvent<HTMLDivElement>, position: number) => {
         dragOverItem.current = position;
     };
 
-    const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
+    const handleDragEnd = (_e: React.DragEvent<HTMLDivElement>) => {
         if (dragItem.current !== null && dragOverItem.current !== null) {
             const copyListItems = [...widgetOrder];
             const dragItemContent = copyListItems[dragItem.current];
@@ -382,7 +383,6 @@ const HomePage: React.FC<HomePageProps> = ({
                                                 </div>
                                             </div>
                                         )}
-                                        {/* Click outside listener could be added here for robustness, but toggle works for simple UI */}
                                     </div>
                                     <button type="submit" className="w-full py-2 bg-brand-primary text-white font-semibold rounded-lg hover:bg-brand-secondary transition-colors text-sm">
                                         Post Message

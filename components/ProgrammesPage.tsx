@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ProgrammeEvent, StaffShift, VolunteerShift, Attendee, AttendeeType, User } from '../types';
+import { ProgrammeEvent, StaffShift, VolunteerShift, Attendee, User } from '../types';
 import { EditIcon } from './icons/EditIcon';
 import { DeleteIcon } from './icons/DeleteIcon';
 import { SearchIcon } from './icons/SearchIcon';
