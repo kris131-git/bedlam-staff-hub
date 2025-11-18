@@ -65,7 +65,7 @@ const App: React.FC = () => {
             const defaultAdmin = {
                 username: 'Admin',
                 password: 'Admin',
-                role: 'Admin' // Matches UserRole.Admin
+                role: UserRole.Admin // Uses UserRole enum
             };
             const { error: seedError } = await supabase.from('users').insert(defaultAdmin);
             
@@ -121,6 +121,10 @@ const App: React.FC = () => {
         .eq('username', username)
         .eq('password', password)
         .single();
+
+    if (error) {
+        console.error("Login attempt error:", error.message);
+    }
 
     if (data) {
       setIsLoggedIn(true);
@@ -374,7 +378,7 @@ const App: React.FC = () => {
           onDeleteBulletin={handleDeleteBulletin}
         />
       ) : (
-        <LoginPage onLogin={(u, p) => handleLogin(u, p).then(res => res)} />
+        <LoginPage onLogin={handleLogin} />
       )}
     </div>
   );

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 
 interface LoginPageProps {
-  onLogin: (username: string, password: string) => string | null;
+  onLogin: (username: string, password: string) => Promise<string | null>;
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
@@ -10,13 +10,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password.trim()){
       setError('Please enter a username and password.');
       return;
     }
-    const errorMsg = onLogin(username, password);
+    const errorMsg = await onLogin(username, password);
     if (errorMsg) {
       setError(errorMsg);
     } else {

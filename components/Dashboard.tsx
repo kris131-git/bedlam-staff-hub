@@ -23,8 +23,8 @@ interface DashboardProps {
   onLogout: () => void;
   // Users
   users: User[];
-  onCreateUser: (newUser: User) => { success: boolean; message?: string };
-  onUpdateUser: (updatedUser: User) => { success: boolean; message?: string };
+  onCreateUser: (newUser: User) => Promise<{ success: boolean; message?: string }>;
+  onUpdateUser: (updatedUser: User) => Promise<{ success: boolean; message?: string }>;
   onDeleteUser: (username: string) => void;
   // Attendees
   attendees: Attendee[];

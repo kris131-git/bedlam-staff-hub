@@ -7,8 +7,8 @@ import { DeleteIcon } from './icons/DeleteIcon';
 interface StaffManagementPageProps {
     user: User; // Currently logged-in user
     users: User[];
-    onCreateUser: (newUser: User) => { success: boolean; message?: string };
-    onUpdateUser: (updatedUser: User) => { success: boolean; message?: string };
+    onCreateUser: (newUser: User) => Promise<{ success: boolean; message?: string }>;
+    onUpdateUser: (updatedUser: User) => Promise<{ success: boolean; message?: string }>;
     onDeleteUser: (username: string) => void;
 }
 
@@ -38,7 +38,7 @@ const StaffManagementPage: React.FC<StaffManagementPageProps> = ({ user, users, 
         setPassword('');
     };
 
-    const handleSave = (e: React.FormEvent) => {
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
         setSuccess(null);
@@ -52,7 +52,7 @@ const StaffManagementPage: React.FC<StaffManagementPageProps> = ({ user, users, 
                 setError("Username and password cannot be empty for new users.");
                 return;
             }
-            const result = onCreateUser({ ...currentUser, password: password });
+            const result = await onCreateUser({ ...currentUser, password: password });
             if (result.success) {
                 setSuccess(`User "${currentUser.username}" created successfully!`);
                 closeModal();
@@ -64,7 +64,7 @@ const StaffManagementPage: React.FC<StaffManagementPageProps> = ({ user, users, 
             if (password.trim()) {
                 finalUser.password = password.trim();
             }
-            const result = onUpdateUser(finalUser);
+            const result = await onUpdateUser(finalUser);
             if (result.success) {
                 setSuccess(`User "${currentUser.username}" updated successfully!`);
                 closeModal();
