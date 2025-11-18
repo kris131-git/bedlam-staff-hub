@@ -7,7 +7,7 @@ import RegistrationPage from './RegistrationPage';
 import AccommodationPage from './AccommodationPage';
 import TillPage from './TillPage';
 import HomePage from './HomePage';
-import { User, UserRole, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Accommodation, Product, Transaction, CartItem, PaymentMethod, BulletinMessage } from '../types';
+import { User, UserRole, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Accommodation, Product, Transaction, CartItem, PaymentMethod, BulletinMessage, BulletinReply } from '../types';
 import { UserGroupIcon } from './icons/UserGroupIcon';
 import { CalendarDaysIcon } from './icons/CalendarDaysIcon';
 import { UsersIcon } from './icons/UsersIcon';
@@ -61,6 +61,8 @@ interface DashboardProps {
   bulletins: BulletinMessage[];
   onCreateBulletin: (msg: Omit<BulletinMessage, 'id' | 'timestamp'>) => void;
   onDeleteBulletin: (id: string) => void;
+  onLikeBulletin: (bulletinId: string, username: string) => void;
+  onReplyBulletin: (bulletinId: string, reply: Omit<BulletinReply, 'id' | 'timestamp'>) => void;
 }
 
 type View = 'home' | 'attendees' | 'programmes' | 'staffManagement' | 'registration' | 'accommodation' | 'till';
@@ -72,7 +74,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
 
   const handleNavClick = (view: View) => {
     setActiveView(view);
-    setIsSidebarOpen(false); // Close sidebar on mobile when a link is clicked
+    setIsSidebarOpen(false);
   };
 
   const NavItem = ({ icon, label, view, active }: { icon: React.ReactNode, label: string, view: View, active: boolean }) => (
@@ -153,7 +155,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
             {activeView === 'home' && (
                 <HomePage 
                     user={user}
-                    users={props.users} // Passing users for the selector
+                    users={props.users} 
                     attendees={props.attendees}
                     events={props.events}
                     staffShifts={props.staffShifts}
@@ -162,6 +164,8 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
                     bulletins={props.bulletins}
                     onCreateBulletin={props.onCreateBulletin}
                     onDeleteBulletin={props.onDeleteBulletin}
+                    onLikeBulletin={props.onLikeBulletin}
+                    onReplyBulletin={props.onReplyBulletin}
                 />
             )}
             {activeView === 'attendees' && <AttendeesPage attendees={props.attendees} onCreate={props.onCreateAttendee} onUpdate={props.onUpdateAttendee} onDelete={props.onDeleteAttendee} />}

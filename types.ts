@@ -102,10 +102,19 @@ export interface Transaction {
 }
 
 // Bulletin Types
+export interface BulletinReply {
+  id: string;
+  author: string;
+  content: string;
+  timestamp: string;
+}
+
 export interface BulletinMessage {
   id: string;
   author: string;
   content: string;
   timestamp: string;
   audience: string[]; // List of recipients (groups or usernames)
+  likes?: string[]; // List of usernames who liked
+  replies?: BulletinReply[];
 }

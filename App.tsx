@@ -2,9 +2,17 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
-import { User, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Accommodation, Product, Transaction, CartItem, PaymentMethod, BulletinMessage, UserRole } from './types';
+import { User, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Accommodation, Product, Transaction, CartItem, PaymentMethod, BulletinMessage, UserRole, AccommodationType, BulletinReply } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from './supabaseClient';
+
+// Helper for password hashing
+async function hashPassword(password: string) {
+  const msgBuffer = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 const App: React.FC = () => {
   // Auth State
@@ -64,8 +72,8 @@ const App: React.FC = () => {
             console.log("Database appears empty. Seeding default Admin user...");
             const defaultAdmin = {
                 username: 'Admin',
-                password: 'Admin',
-                role: UserRole.Admin // Uses UserRole enum
+                password: 'Admin', // Initial seed is plain text, change immediately
+                role: UserRole.Admin
             };
             const { error: seedError } = await supabase.from('users').insert(defaultAdmin);
             
@@ -82,7 +90,24 @@ const App: React.FC = () => {
         setEvents(eventsRes.data || []);
         setStaffShifts(staffRes.data || []);
         setVolunteerShifts(volRes.data || []);
-        setAccommodations(accRes.data || []);
+        
+        // Handle Accommodations (Seed if empty)
+        let loadedAccommodations = accRes.data || [];
+        if (loadedAccommodations.length === 0) {
+            console.log("Seeding default accommodations...");
+            const seedAccs = [
+                { id: uuidv4(), name: 'Yurt 1', type: AccommodationType.Yurt, capacity: 4, attendeeIds: [] },
+                { id: uuidv4(), name: 'Yurt 2', type: AccommodationType.Yurt, capacity: 4, attendeeIds: [] },
+                { id: uuidv4(), name: 'Bottom Yurt', type: AccommodationType.Yurt, capacity: 4, attendeeIds: [] },
+                { id: uuidv4(), name: 'Caravan', type: AccommodationType.Caravan, capacity: 2, attendeeIds: [] },
+            ];
+            const { error: seedError } = await supabase.from('accommodations').insert(seedAccs);
+            if (!seedError) {
+                loadedAccommodations = seedAccs;
+            }
+        }
+        setAccommodations(loadedAccommodations);
+
         setProducts(prodRes.data || []);
         setTransactions(transRes.data || []);
         setBulletins(bullRes.data || []);
@@ -99,7 +124,7 @@ const App: React.FC = () => {
     fetchAllData();
   }, [fetchAllData]);
 
-  // Check local storage only for session persistence (Login state)
+  // Check local storage for session
   useEffect(() => {
     const savedUser = localStorage.getItem('bedlam_currentUser');
     if (savedUser) {
@@ -114,22 +139,32 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = useCallback(async (username: string, password: string): Promise<string | null> => {
-    // Authenticate against the DB Users table
-    const { data, error } = await supabase
+    // 1. Try to find user by username
+    const { data: userFound, error } = await supabase
         .from('users')
         .select('*')
         .eq('username', username)
-        .eq('password', password)
         .single();
 
-    if (error) {
-        console.error("Login attempt error:", error.message);
+    if (error || !userFound) {
+        return 'Invalid username or password.';
     }
 
-    if (data) {
+    // 2. Check password (support both plain text for legacy and hash for new)
+    let isValid = false;
+    if (userFound.password === password) {
+        isValid = true;
+    } else {
+        const hashed = await hashPassword(password);
+        if (userFound.password === hashed) {
+            isValid = true;
+        }
+    }
+
+    if (isValid) {
       setIsLoggedIn(true);
-      setUser(data);
-      localStorage.setItem('bedlam_currentUser', JSON.stringify(data));
+      setUser(userFound);
+      localStorage.setItem('bedlam_currentUser', JSON.stringify(userFound));
       return null;
     }
     return 'Invalid username or password.';
@@ -142,26 +177,36 @@ const App: React.FC = () => {
   }, []);
 
   // --- Data Mutators ---
-  // We use optimistic updates for the UI, then fire the DB call. 
-  // In a real production app, you'd handle rollbacks on error.
 
-  // User Management
+  // User Management (Now with Hashing)
   const handleCreateUser = useCallback(async (newUser: User) => {
     if (users.some(u => u.username.toLowerCase() === newUser.username.toLowerCase())) {
       return { success: false, message: 'Username already exists.' };
     }
-    // Optimistic
-    setUsers(prev => [...prev, newUser]);
-    // DB
-    await supabase.from('users').insert(newUser);
+    
+    const hashedPassword = await hashPassword(newUser.password);
+    const userToSave = { ...newUser, password: hashedPassword };
+
+    setUsers(prev => [...prev, userToSave]);
+    await supabase.from('users').insert(userToSave);
     return { success: true };
   }, [users]);
 
   const handleUpdateUser = useCallback(async (updatedUser: User) => {
-    setUsers(prev => prev.map(u => u.username === updatedUser.username ? updatedUser : u));
-    await supabase.from('users').update(updatedUser).eq('username', updatedUser.username);
+    // Check if password was changed (simple check: if it's not same as existing in state)
+    const existing = users.find(u => u.username === updatedUser.username);
+    let userToSave = { ...updatedUser };
+    
+    // If password has changed (and it's not already hashed length approx), hash it.
+    // This logic assumes if you type a short password it needs hashing. 
+    if (existing && updatedUser.password !== existing.password) {
+        userToSave.password = await hashPassword(updatedUser.password);
+    }
+
+    setUsers(prev => prev.map(u => u.username === userToSave.username ? userToSave : u));
+    await supabase.from('users').update(userToSave).eq('username', userToSave.username);
     return { success: true };
-  }, []);
+  }, [users]);
 
   const handleDeleteUser = useCallback(async (username: string) => {
     setUsers(prev => prev.filter(u => u.username !== username));
@@ -181,12 +226,10 @@ const App: React.FC = () => {
   };
   const handleDeleteAttendee = async (id: string) => {
       setAttendees(prev => prev.filter(a => a.id !== id));
-      // Also remove from accommodation local state
       setAccommodations(prev => prev.map(acc => ({
           ...acc,
           attendeeIds: acc.attendeeIds.filter(attendeeId => attendeeId !== id)
       })));
-      // DB delete
       await supabase.from('attendees').delete().eq('id', id);
   };
   const handleCheckInAttendee = async (id: string) => {
@@ -248,7 +291,7 @@ const App: React.FC = () => {
   const handleAssignAttendeeToAccommodation = async (accommodationId: string, attendeeId: string) => {
     let updatedAccommodations = [...accommodations];
     
-    // Remove from others if moving
+    // Remove from others
     updatedAccommodations = updatedAccommodations.map(acc => {
         if (acc.attendeeIds.includes(attendeeId)) {
              return { ...acc, attendeeIds: acc.attendeeIds.filter(id => id !== attendeeId) };
@@ -265,9 +308,6 @@ const App: React.FC = () => {
     });
 
     setAccommodations(updatedAccommodations);
-
-    // DB Sync (Update all modified accommodations)
-    // In a real app, we'd be more precise, but looping through is safe enough for small data
     for (const acc of updatedAccommodations) {
         await supabase.from('accommodations').update({ attendeeIds: acc.attendeeIds }).eq('id', acc.id);
     }
@@ -303,7 +343,7 @@ const App: React.FC = () => {
   
   // Bulletin Handlers
   const handleCreateBulletin = async (msg: Omit<BulletinMessage, 'id' | 'timestamp'>) => {
-      const newBulletin = { ...msg, id: uuidv4(), timestamp: new Date().toISOString() };
+      const newBulletin = { ...msg, id: uuidv4(), timestamp: new Date().toISOString(), likes: [], replies: [] };
       setBulletins(prev => [newBulletin, ...prev]);
       await supabase.from('bulletins').insert(newBulletin);
   };
@@ -311,6 +351,30 @@ const App: React.FC = () => {
   const handleDeleteBulletin = async (id: string) => {
       setBulletins(prev => prev.filter(b => b.id !== id));
       await supabase.from('bulletins').delete().eq('id', id);
+  };
+
+  const handleLikeBulletin = async (bulletinId: string, username: string) => {
+    const bulletin = bulletins.find(b => b.id === bulletinId);
+    if (!bulletin) return;
+    const currentLikes = bulletin.likes || [];
+    let newLikes;
+    if (currentLikes.includes(username)) {
+        newLikes = currentLikes.filter(u => u !== username);
+    } else {
+        newLikes = [...currentLikes, username];
+    }
+    setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, likes: newLikes } : b));
+    await supabase.from('bulletins').update({ likes: newLikes }).eq('id', bulletinId);
+  };
+
+  const handleReplyBulletin = async (bulletinId: string, reply: Omit<BulletinReply, 'id' | 'timestamp'>) => {
+    const newReply: BulletinReply = { ...reply, id: uuidv4(), timestamp: new Date().toISOString() };
+    const bulletin = bulletins.find(b => b.id === bulletinId);
+    if (!bulletin) return;
+    const newReplies = [...(bulletin.replies || []), newReply];
+    
+    setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, replies: newReplies } : b));
+    await supabase.from('bulletins').update({ replies: newReplies }).eq('id', bulletinId);
   };
 
   if (loading) {
@@ -376,6 +440,8 @@ const App: React.FC = () => {
           bulletins={bulletins}
           onCreateBulletin={handleCreateBulletin}
           onDeleteBulletin={handleDeleteBulletin}
+          onLikeBulletin={handleLikeBulletin}
+          onReplyBulletin={handleReplyBulletin}
         />
       ) : (
         <LoginPage onLogin={handleLogin} />

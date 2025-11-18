@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { User, BulletinMessage, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Transaction } from '../types';
+import { User, BulletinMessage, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Transaction, BulletinReply } from '../types';
 import { DeleteIcon } from './icons/DeleteIcon';
 import { CalendarDaysIcon } from './icons/CalendarDaysIcon';
 import { UserGroupIcon } from './icons/UserGroupIcon';
@@ -10,6 +10,8 @@ import { BellIcon } from './icons/BellIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { DragHandleIcon } from './icons/DragHandleIcon';
 import { EditIcon } from './icons/EditIcon';
+import { HeartIcon } from './icons/HeartIcon';
+import { ChatBubbleIcon } from './icons/ChatBubbleIcon';
 
 interface HomePageProps {
     user: User;
@@ -22,10 +24,13 @@ interface HomePageProps {
     bulletins: BulletinMessage[];
     onCreateBulletin: (msg: Omit<BulletinMessage, 'id' | 'timestamp'>) => void;
     onDeleteBulletin: (id: string) => void;
+    onLikeBulletin: (bulletinId: string, username: string) => void;
+    onReplyBulletin: (bulletinId: string, reply: Omit<BulletinReply, 'id' | 'timestamp'>) => void;
 }
 
 const HomePage: React.FC<HomePageProps> = ({ 
-    user, users, attendees, events, staffShifts, volunteerShifts, transactions, bulletins, onCreateBulletin, onDeleteBulletin 
+    user, users, attendees, events, staffShifts, volunteerShifts, transactions, bulletins, 
+    onCreateBulletin, onDeleteBulletin, onLikeBulletin, onReplyBulletin
 }) => {
     // Layout Order State
     const [widgetOrder, setWidgetOrder] = useState<string[]>(['stats', 'timetable', 'upcoming', 'bulletin']);
@@ -40,6 +45,10 @@ const HomePage: React.FC<HomePageProps> = ({
     const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
     const [recipientSearch, setRecipientSearch] = useState('');
     const [isRecipientDropdownOpen, setIsRecipientDropdownOpen] = useState(false);
+    
+    // Reply State
+    const [replyingTo, setReplyingTo] = useState<string | null>(null);
+    const [replyContent, setReplyContent] = useState('');
 
     // Stats Calculation
     const totalAttendees = attendees.length;
@@ -77,15 +86,8 @@ const HomePage: React.FC<HomePageProps> = ({
     // Bulletin Filtering
     const visibleBulletins = bulletins.filter(b => {
         const audience = b.audience || [];
-        // Show if:
-        // 1. Audience includes '(All)'
-        // 2. Audience includes '(Staff)' and user is Admin or Staff
-        // 3. Audience includes '(Volunteers)' and... well we don't have volunteer login, but let's keep the logic open.
-        // 4. Audience explicitly includes the username
         if (audience.includes('(All)')) return true;
         if (audience.includes('(Staff)') && (user.role === 'Staff' || user.role === 'Admin')) return true;
-        // If user was a volunteer (not in UserRole yet, but for completeness)
-        if (audience.includes('(Volunteers)') && user.role.toString() === 'Volunteer') return true;
         if (audience.includes(user.username)) return true;
         // Author always sees their own posts
         if (b.author === user.username) return true;
@@ -101,7 +103,6 @@ const HomePage: React.FC<HomePageProps> = ({
         e.preventDefault();
         if (!newBulletinContent.trim()) return;
         
-        // Default to (All) if nothing selected
         const audience = selectedRecipients.length > 0 ? selectedRecipients : ['(All)'];
 
         onCreateBulletin({
@@ -112,6 +113,16 @@ const HomePage: React.FC<HomePageProps> = ({
         setNewBulletinContent('');
         setSelectedRecipients([]);
         setIsRecipientDropdownOpen(false);
+    };
+    
+    const handleSubmitReply = (bulletinId: string) => {
+        if (!replyContent.trim()) return;
+        onReplyBulletin(bulletinId, {
+            author: user.username,
+            content: replyContent
+        });
+        setReplyContent('');
+        setReplyingTo(null);
     };
 
     const toggleRecipient = (val: string) => {
@@ -127,10 +138,8 @@ const HomePage: React.FC<HomePageProps> = ({
     };
 
     // Drag and Drop Handlers
-    // Note: We prefix the 'e' argument with '_' to tell TypeScript we are intentionally ignoring it
     const handleDragStart = (_e: React.DragEvent<HTMLDivElement>, position: number) => {
         dragItem.current = position;
-        // e.dataTransfer.effectAllowed = "move"; // Optional visual
     };
 
     const handleDragEnter = (_e: React.DragEvent<HTMLDivElement>, position: number) => {
@@ -291,6 +300,8 @@ const HomePage: React.FC<HomePageProps> = ({
                                 ) : (
                                     visibleBulletins.map(msg => {
                                         const isForMe = msg.audience.includes(user.username);
+                                        const likedByMe = (msg.likes || []).includes(user.username);
+                                        
                                         return (
                                             <div key={msg.id} className={`p-4 rounded-lg border relative group ${isForMe ? 'bg-brand-primary/5 border-brand-primary/30' : 'bg-gray-900 border-dark-border'}`}>
                                                 <div className="flex justify-between items-start mb-2">
@@ -311,7 +322,58 @@ const HomePage: React.FC<HomePageProps> = ({
                                                         </button>
                                                     )}
                                                 </div>
-                                                <p className="text-white whitespace-pre-wrap">{msg.content}</p>
+                                                <p className="text-white whitespace-pre-wrap mb-3">{msg.content}</p>
+                                                
+                                                {/* Action Bar */}
+                                                <div className="flex items-center gap-4 border-t border-white/5 pt-2">
+                                                    <button 
+                                                        onClick={() => onLikeBulletin(msg.id, user.username)}
+                                                        className={`flex items-center gap-1 text-sm transition-colors ${likedByMe ? 'text-red-500' : 'text-dark-text-secondary hover:text-red-400'}`}
+                                                    >
+                                                        <HeartIcon filled={likedByMe} />
+                                                        <span>{msg.likes?.length || 0}</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setReplyingTo(replyingTo === msg.id ? null : msg.id)}
+                                                        className="flex items-center gap-1 text-sm text-dark-text-secondary hover:text-brand-primary transition-colors"
+                                                    >
+                                                        <ChatBubbleIcon />
+                                                        <span>{msg.replies?.length || 0} Reply</span>
+                                                    </button>
+                                                </div>
+
+                                                {/* Replies Section */}
+                                                {msg.replies && msg.replies.length > 0 && (
+                                                    <div className="mt-3 space-y-2 pl-4 border-l-2 border-dark-border">
+                                                        {msg.replies.map(reply => (
+                                                            <div key={reply.id} className="text-sm">
+                                                                <span className="font-bold text-brand-primary mr-2">{reply.author}</span>
+                                                                <span className="text-gray-300">{reply.content}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Reply Input */}
+                                                {replyingTo === msg.id && (
+                                                    <div className="mt-3 flex gap-2">
+                                                        <input 
+                                                            type="text" 
+                                                            autoFocus
+                                                            value={replyContent}
+                                                            onChange={e => setReplyContent(e.target.value)}
+                                                            onKeyDown={e => e.key === 'Enter' && handleSubmitReply(msg.id)}
+                                                            className="flex-1 px-3 py-1 text-sm bg-gray-800 border border-dark-border rounded text-white focus:ring-brand-primary focus:border-brand-primary"
+                                                            placeholder="Write a reply..."
+                                                        />
+                                                        <button 
+                                                            onClick={() => handleSubmitReply(msg.id)}
+                                                            className="px-3 py-1 bg-brand-primary text-white text-xs font-bold rounded hover:bg-brand-secondary"
+                                                        >
+                                                            Send
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })
@@ -321,7 +383,7 @@ const HomePage: React.FC<HomePageProps> = ({
                             {/* Add Message Form */}
                             <div className="bg-gray-800/30 p-4 rounded-lg border border-dark-border h-fit sticky top-0">
                                 <h3 className="text-sm font-bold text-white mb-3 uppercase tracking-wider">Post a Message</h3>
-                                <form onSubmit={handlePostBulletin} className="space-y-3">
+                                <form onSubmit={handlePostBulletin} className="space-y-3 relative z-0">
                                     <div>
                                         <label className="block text-xs font-medium text-dark-text-secondary mb-1">Message</label>
                                         <textarea 
@@ -351,40 +413,43 @@ const HomePage: React.FC<HomePageProps> = ({
                                         </div>
 
                                         {isRecipientDropdownOpen && (
-                                            <div className="absolute z-20 mt-1 w-full bg-dark-card border border-dark-border rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col">
-                                                <div className="p-2 border-b border-dark-border">
-                                                    <div className="relative">
-                                                        <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
-                                                            <SearchIcon />
+                                            <>
+                                                <div className="fixed inset-0 z-10" onClick={() => setIsRecipientDropdownOpen(false)}></div>
+                                                <div className="absolute z-20 mt-1 w-full bg-dark-card border border-dark-border rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col">
+                                                    <div className="p-2 border-b border-dark-border">
+                                                        <div className="relative">
+                                                            <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                                                                <SearchIcon />
+                                                            </div>
+                                                            <input 
+                                                                autoFocus
+                                                                type="text"
+                                                                className="w-full pl-8 pr-2 py-1 bg-gray-900 border border-dark-border rounded text-sm text-white focus:outline-none focus:border-brand-primary"
+                                                                placeholder="Search..."
+                                                                value={recipientSearch}
+                                                                onChange={e => setRecipientSearch(e.target.value)}
+                                                                onClick={e => e.stopPropagation()}
+                                                            />
                                                         </div>
-                                                        <input 
-                                                            autoFocus
-                                                            type="text"
-                                                            className="w-full pl-8 pr-2 py-1 bg-gray-900 border border-dark-border rounded text-sm text-white focus:outline-none focus:border-brand-primary"
-                                                            placeholder="Search..."
-                                                            value={recipientSearch}
-                                                            onChange={e => setRecipientSearch(e.target.value)}
-                                                            onClick={e => e.stopPropagation()}
-                                                        />
+                                                    </div>
+                                                    <div className="overflow-y-auto flex-1 p-1">
+                                                        {potentialRecipients.map(option => (
+                                                            <label key={option} className="flex items-center p-2 hover:bg-gray-800 rounded cursor-pointer" onClick={e => e.stopPropagation()}>
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={selectedRecipients.includes(option)} 
+                                                                    onChange={() => toggleRecipient(option)}
+                                                                    className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-brand-primary focus:ring-brand-secondary"
+                                                                />
+                                                                <span className="ml-2 text-sm text-white">{option}</span>
+                                                            </label>
+                                                        ))}
                                                     </div>
                                                 </div>
-                                                <div className="overflow-y-auto flex-1 p-1">
-                                                    {potentialRecipients.map(option => (
-                                                        <label key={option} className="flex items-center p-2 hover:bg-gray-800 rounded cursor-pointer" onClick={e => e.stopPropagation()}>
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={selectedRecipients.includes(option)} 
-                                                                onChange={() => toggleRecipient(option)}
-                                                                className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-brand-primary focus:ring-brand-secondary"
-                                                            />
-                                                            <span className="ml-2 text-sm text-white">{option}</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            </div>
+                                            </>
                                         )}
                                     </div>
-                                    <button type="submit" className="w-full py-2 bg-brand-primary text-white font-semibold rounded-lg hover:bg-brand-secondary transition-colors text-sm">
+                                    <button type="submit" className="w-full py-2 bg-brand-primary text-white font-semibold rounded-lg hover:bg-brand-secondary transition-colors text-sm relative z-0">
                                         Post Message
                                     </button>
                                 </form>
