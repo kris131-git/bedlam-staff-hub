@@ -60,7 +60,7 @@ const App: React.FC = () => {
             supabase.from('accommodations').select('*'),
             supabase.from('products').select('*'),
             supabase.from('transactions').select('*'),
-            supabase.from('bulletins').select('*')
+            supabase.from('bulletins').select('*').order('timestamp', { ascending: false })
         ]);
 
         if (usersRes.error) throw usersRes.error;
@@ -124,6 +124,35 @@ const App: React.FC = () => {
     fetchAllData();
   }, [fetchAllData]);
 
+  // --- REALTIME SUBSCRIPTION ---
+  useEffect(() => {
+    // Subscribe to realtime changes for bulletins
+    const channel = supabase
+      .channel('bulletins-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bulletins' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+             const newMsg = payload.new as BulletinMessage;
+             setBulletins(prev => [newMsg, ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+             const updatedMsg = payload.new as BulletinMessage;
+             setBulletins(prev => prev.map(b => b.id === updatedMsg.id ? updatedMsg : b));
+          } else if (payload.eventType === 'DELETE') {
+             const deletedId = payload.old.id;
+             setBulletins(prev => prev.filter(b => b.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+
   // Check local storage for session
   useEffect(() => {
     const savedUser = localStorage.getItem('bedlam_currentUser');
@@ -178,7 +207,7 @@ const App: React.FC = () => {
 
   // --- Data Mutators ---
 
-  // User Management (Now with Hashing)
+  // User Management
   const handleCreateUser = useCallback(async (newUser: User) => {
     if (users.some(u => u.username.toLowerCase() === newUser.username.toLowerCase())) {
       return { success: false, message: 'Username already exists.' };
@@ -197,8 +226,6 @@ const App: React.FC = () => {
     const existing = users.find(u => u.username === updatedUser.username);
     let userToSave = { ...updatedUser };
     
-    // If password has changed (and it's not already hashed length approx), hash it.
-    // This logic assumes if you type a short password it needs hashing. 
     if (existing && updatedUser.password !== existing.password) {
         userToSave.password = await hashPassword(updatedUser.password);
     }
@@ -342,13 +369,16 @@ const App: React.FC = () => {
   };
   
   // Bulletin Handlers
+  // Note: Realtime subscription now handles the UI state update, but we optimistically update here for instant feedback
   const handleCreateBulletin = async (msg: Omit<BulletinMessage, 'id' | 'timestamp'>) => {
       const newBulletin = { ...msg, id: uuidv4(), timestamp: new Date().toISOString(), likes: [], replies: [] };
+      // Optimistic update
       setBulletins(prev => [newBulletin, ...prev]);
       await supabase.from('bulletins').insert(newBulletin);
   };
 
   const handleDeleteBulletin = async (id: string) => {
+      // Optimistic update
       setBulletins(prev => prev.filter(b => b.id !== id));
       await supabase.from('bulletins').delete().eq('id', id);
   };
@@ -363,6 +393,7 @@ const App: React.FC = () => {
     } else {
         newLikes = [...currentLikes, username];
     }
+    // Optimistic update
     setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, likes: newLikes } : b));
     await supabase.from('bulletins').update({ likes: newLikes }).eq('id', bulletinId);
   };
@@ -373,6 +404,7 @@ const App: React.FC = () => {
     if (!bulletin) return;
     const newReplies = [...(bulletin.replies || []), newReply];
     
+    // Optimistic update
     setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, replies: newReplies } : b));
     await supabase.from('bulletins').update({ replies: newReplies }).eq('id', bulletinId);
   };

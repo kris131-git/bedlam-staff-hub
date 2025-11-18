@@ -5,6 +5,7 @@ import { EditIcon } from './icons/EditIcon';
 import { DeleteIcon } from './icons/DeleteIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { ClockIcon } from './icons/ClockIcon';
+import { CalendarDaysIcon } from './icons/CalendarDaysIcon';
 
 type ProgrammeTab = 'all' | 'events' | 'staff' | 'volunteers' | 'personal';
 
@@ -108,9 +109,9 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
 
         const defaults = {
             all: {},
-            events: { day: 'Friday', time: '', eventName: '', stage: '', details: '' },
-            staff: { day: 'Friday', time: '', attendeeIds: [], role: '', locations: [] },
-            volunteers: { day: 'Friday', time: '', attendeeIds: [], task: '', locations: [] },
+            events: { date: '', day: 'Friday', time: '', eventName: '', stage: '', details: '' },
+            staff: { date: '', day: 'Friday', time: '', attendeeIds: [], role: '', locations: [] },
+            volunteers: { date: '', day: 'Friday', time: '', attendeeIds: [], task: '', locations: [] },
             personal: {}
         };
 
@@ -210,6 +211,10 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
 
         const days = { 'Friday': 1, 'Saturday': 2, 'Sunday': 3 };
         all.sort((a, b) => {
+            // Sort by specific date if available, otherwise fallback to Day string logic
+            if (a.date && b.date) {
+                return a.date.localeCompare(b.date) || a.time.localeCompare(b.time);
+            }
             const dayDiff = (days[a.day as keyof typeof days] || 4) - (days[b.day as keyof typeof days] || 4);
             if (dayDiff !== 0) return dayDiff;
             return a.time.localeCompare(b.time);
@@ -222,10 +227,13 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
             case 'all':
                 const combined = getCombinedSchedule();
                 return <ScheduleTable 
-                    headers={['Type', 'Day', 'Time', 'Name/Event', 'Role/Stage', 'Location/Details', 'Actions']}
+                    headers={['Type', 'Date / Day', 'Time', 'Name/Event', 'Role/Stage', 'Location/Details', 'Actions']}
                     data={combined.map(c => [
                         <span key={`t-${c.id}`} className={`px-2 py-0.5 rounded text-xs font-bold ${c.type === 'Event' ? 'bg-purple-500/20 text-purple-300' : c.type === 'Staff' ? 'bg-blue-500/20 text-blue-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{c.type}</span>,
-                        c.day,
+                        <div key={`d-${c.id}`}>
+                            {c.date && <div className="text-xs text-dark-text-secondary">{c.date}</div>}
+                            <div>{c.day}</div>
+                        </div>,
                         c.time,
                         <span key={`n-${c.id}`} className="font-bold text-white">{c.display}</span>,
                         c.sub,
@@ -241,10 +249,13 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
                 if (mySchedule.length === 0) return <div className="p-8 text-center text-dark-text-secondary">You have no shifts assigned yet.</div>;
 
                 return <ScheduleTable 
-                    headers={['Type', 'Day', 'Time', 'Task/Role', 'Location', 'Actions']}
+                    headers={['Type', 'Date / Day', 'Time', 'Task/Role', 'Location', 'Actions']}
                     data={mySchedule.map(c => [
                         <span key={`t-${c.id}`} className={`px-2 py-0.5 rounded text-xs font-bold ${c.type === 'Staff' ? 'bg-blue-500/20 text-blue-300' : 'bg-yellow-500/20 text-yellow-300'}`}>{c.type}</span>,
-                        c.day,
+                        <div key={`d-${c.id}`}>
+                             {c.date && <div className="text-xs text-dark-text-secondary">{c.date}</div>}
+                             <div>{c.day}</div>
+                        </div>,
                         c.time,
                         c.sub,
                         c.detail,
@@ -254,18 +265,48 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
 
             case 'events':
                 return <ScheduleTable 
-                    headers={['Day', 'Time', 'Event', 'Stage', 'Details', 'Actions']} 
-                    data={props.events.map(e => [e.day, e.time, <span key={e.id} className="font-bold text-white">{e.eventName}</span>, e.stage, e.details, renderActions(e)])} 
+                    headers={['Date / Day', 'Time', 'Event', 'Stage', 'Details', 'Actions']} 
+                    data={props.events.map(e => [
+                        <div key={`d-${e.id}`}>
+                             {e.date && <div className="text-xs text-dark-text-secondary">{e.date}</div>}
+                             <div>{e.day}</div>
+                        </div>,
+                        e.time, 
+                        <span key={e.id} className="font-bold text-white">{e.eventName}</span>, 
+                        e.stage, 
+                        e.details, 
+                        renderActions(e)
+                    ])} 
                 />;
             case 'staff':
                 return <ScheduleTable 
-                    headers={['Day', 'Time', 'Staff Member(s)', 'Role', 'Location(s)', 'Actions']} 
-                    data={props.staffShifts.map(s => [s.day, s.time, <span key={s.id} className="font-bold text-white">{getNames(s.attendeeIds)}</span>, s.role, (s.locations || []).join(', '), renderActions(s)])}
+                    headers={['Date / Day', 'Time', 'Staff Member(s)', 'Role', 'Location(s)', 'Actions']} 
+                    data={props.staffShifts.map(s => [
+                        <div key={`d-${s.id}`}>
+                             {s.date && <div className="text-xs text-dark-text-secondary">{s.date}</div>}
+                             <div>{s.day}</div>
+                        </div>,
+                        s.time, 
+                        <span key={s.id} className="font-bold text-white">{getNames(s.attendeeIds)}</span>, 
+                        s.role, 
+                        (s.locations || []).join(', '), 
+                        renderActions(s)
+                    ])}
                 />;
             case 'volunteers':
                 return <ScheduleTable 
-                    headers={['Day', 'Time', 'Volunteer(s)', 'Task', 'Location(s)', 'Actions']} 
-                    data={props.volunteerShifts.map(v => [v.day, v.time, <span key={v.id} className="font-bold text-white">{getNames(v.attendeeIds)}</span>, v.task, (v.locations || []).join(', '), renderActions(v)])}
+                    headers={['Date / Day', 'Time', 'Volunteer(s)', 'Task', 'Location(s)', 'Actions']} 
+                    data={props.volunteerShifts.map(v => [
+                        <div key={`d-${v.id}`}>
+                             {v.date && <div className="text-xs text-dark-text-secondary">{v.date}</div>}
+                             <div>{v.day}</div>
+                        </div>,
+                        v.time, 
+                        <span key={v.id} className="font-bold text-white">{getNames(v.attendeeIds)}</span>, 
+                        v.task, 
+                        (v.locations || []).join(', '), 
+                        renderActions(v)
+                    ])}
                 />;
             default:
                 return null;
@@ -276,6 +317,17 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
       setCurrentItem((prev: any) => ({ ...prev, [e.target.name]: e.target.value }));
     };
     
+    // Auto-calculate Day based on Date
+    const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const dateVal = e.target.value;
+        const dayName = new Date(dateVal).toLocaleDateString('en-US', { weekday: 'long' });
+        setCurrentItem((prev: any) => ({
+            ...prev,
+            date: dateVal,
+            day: dayName // Auto-fill day
+        }));
+    };
+
     const toggleAttendeeSelection = (attendeeId: string) => {
         setCurrentItem((prev: any) => {
             const currentIds = prev.attendeeIds || [];
@@ -303,7 +355,35 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
         if (!currentItem) return null;
         
         const commonTimeFields = (
+            <>
              <div>
+                <label className="block text-sm font-medium text-dark-text-secondary mb-1">Date</label>
+                <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-dark-text-secondary">
+                        <CalendarDaysIcon />
+                    </div>
+                     <input 
+                        type="date"
+                        name="date"
+                        value={currentItem.date || ''}
+                        onChange={handleDateChange}
+                        required
+                        className="w-full pl-10 pr-3 py-2 bg-gray-900 border border-dark-border rounded-lg text-white focus:ring-brand-primary focus:border-brand-primary"
+                    />
+                </div>
+             </div>
+             <div>
+                 {/* Day is mostly display now, but editable if needed */}
+                <label className="block text-sm font-medium text-dark-text-secondary mb-1">Day (Auto)</label>
+                <input 
+                    type="text" 
+                    name="day" 
+                    value={currentItem.day} 
+                    onChange={handleFormChange} 
+                    className="w-full px-3 py-2 bg-gray-900 border border-dark-border rounded-lg text-white focus:ring-brand-primary focus:border-brand-primary" 
+                />
+            </div>
+             <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-dark-text-secondary mb-1">Time Duration</label>
                 <div className="flex items-center gap-2">
                     <div className="relative flex-1">
@@ -333,6 +413,7 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
                     </div>
                 </div>
             </div>
+            </>
         );
 
         if (activeTab === 'events') {
@@ -345,12 +426,6 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
                     <div>
                         <label className="block text-sm font-medium text-dark-text-secondary mb-1">Stage</label>
                         <input type="text" name="stage" value={currentItem.stage} onChange={handleFormChange} required className="w-full px-3 py-2 bg-gray-900 border border-dark-border rounded-lg text-white focus:ring-brand-primary focus:border-brand-primary" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-dark-text-secondary mb-1">Day</label>
-                        <select name="day" value={currentItem.day} onChange={handleFormChange} className="w-full px-3 py-2 bg-gray-900 border border-dark-border rounded-lg text-white focus:ring-brand-primary focus:border-brand-primary">
-                             {['Friday', 'Saturday', 'Sunday'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
                     </div>
                     
                     {commonTimeFields}
@@ -421,13 +496,7 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
                         />
                     </div>
 
-                    {/* Day */}
-                    <div>
-                        <label className="block text-sm font-medium text-dark-text-secondary mb-1">Day</label>
-                         <select name="day" value={currentItem.day} onChange={handleFormChange} className="w-full px-3 py-2 bg-gray-900 border border-dark-border rounded-lg text-white focus:ring-brand-primary focus:border-brand-primary">
-                             {['Friday', 'Saturday', 'Sunday'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
-                    </div>
+                    {commonTimeFields}
 
                     {/* Location Search & Select */}
                      <div className="sm:col-span-2">
@@ -459,8 +528,6 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
                             {filteredLocations.length === 0 && <p className="text-sm text-gray-500 italic p-2">No locations found matching '{locationSearch}'.</p>}
                         </div>
                     </div>
-
-                    {commonTimeFields}
                 </>
             );
         }

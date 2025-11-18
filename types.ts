@@ -38,6 +38,7 @@ export interface Attendee {
 
 export interface ProgrammeEvent {
   id: string;
+  date?: string; // YYYY-MM-DD
   time: string;
   day: string;
   stage: string;
@@ -47,6 +48,7 @@ export interface ProgrammeEvent {
 
 export interface StaffShift {
   id: string;
+  date?: string; // YYYY-MM-DD
   time: string;
   day: string;
   attendeeIds: string[];
@@ -56,6 +58,7 @@ export interface StaffShift {
 
 export interface VolunteerShift {
   id: string;
+  date?: string; // YYYY-MM-DD
   time: string;
   day: string;
   attendeeIds: string[];

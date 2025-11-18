@@ -66,20 +66,37 @@ const HomePage: React.FC<HomePageProps> = ({
         ...staffShifts.filter(s => s.attendeeIds.includes(myId || '')).map(s => ({ ...s, type: 'Staff' })),
         ...volunteerShifts.filter(v => v.attendeeIds.includes(myId || '')).map(v => ({ ...v, type: 'Volunteer' }))
     ].sort((a, b) => {
-        const days = { 'Friday': 1, 'Saturday': 2, 'Sunday': 3 };
-        const dayDiff = (days[a.day as keyof typeof days] || 4) - (days[b.day as keyof typeof days] || 4);
-        if (dayDiff !== 0) return dayDiff;
+        // Sort logic: Date -> Time
+        if (a.date && b.date) {
+            const dateCompare = a.date.localeCompare(b.date);
+            if (dateCompare !== 0) return dateCompare;
+        }
         return a.time.localeCompare(b.time);
     });
 
-    // Upcoming Main Stage Events
+    // --- UPCOMING EVENTS LOGIC ---
     const upcomingEvents = events
         .filter(e => e.stage === 'Main Stage')
+        .filter(e => {
+            if (!e.date) return false; // Must have a date to calculate if "Next"
+            try {
+                // Parse Time ("18:00 - 19:00") -> "18:00"
+                const startTimeStr = e.time.split('-')[0].trim();
+                const eventDateTime = new Date(`${e.date}T${startTimeStr}`);
+                const now = new Date();
+                return eventDateTime > now;
+            } catch (err) {
+                return false;
+            }
+        })
         .sort((a, b) => {
-            const days = { 'Friday': 1, 'Saturday': 2, 'Sunday': 3 };
-            const dayDiff = (days[a.day as keyof typeof days] || 4) - (days[b.day as keyof typeof days] || 4);
-            if (dayDiff !== 0) return dayDiff;
-            return a.time.localeCompare(b.time);
+            if (!a.date || !b.date) return 0;
+             // Parse Time
+             const startA = a.time.split('-')[0].trim();
+             const startB = b.time.split('-')[0].trim();
+             const dateA = new Date(`${a.date}T${startA}`);
+             const dateB = new Date(`${b.date}T${startB}`);
+             return dateA.getTime() - dateB.getTime();
         })
         .slice(0, 3);
 
@@ -225,7 +242,10 @@ const HomePage: React.FC<HomePageProps> = ({
                                         <li key={shift.id} className="bg-gray-900 p-3 rounded-lg border border-dark-border">
                                             <div className="flex justify-between items-start">
                                                 <div>
-                                                    <span className="text-brand-primary font-bold block">{shift.day} @ {shift.time}</span>
+                                                    <div className="text-brand-primary font-bold block">
+                                                        {shift.date ? <span className="mr-2 text-xs opacity-80">{shift.date}</span> : null}
+                                                        <span>{shift.day} @ {shift.time}</span>
+                                                    </div>
                                                     <span className="text-white block mt-1">{'role' in shift ? shift.role : shift.task}</span>
                                                     <span className="text-sm text-dark-text-secondary block">{shift.locations.join(', ')}</span>
                                                 </div>
@@ -252,13 +272,20 @@ const HomePage: React.FC<HomePageProps> = ({
                         </div>
                         <div className="p-4 flex-1 overflow-y-auto max-h-80">
                             {upcomingEvents.length === 0 ? (
-                                 <p className="text-dark-text-secondary text-center py-4">No upcoming events.</p>
+                                 <p className="text-dark-text-secondary text-center py-4">
+                                    {events.length > 0 ? "No upcoming events found." : "No events found."}
+                                    <br/>
+                                    <span className="text-xs italic opacity-70">(Ensure events have dates assigned)</span>
+                                 </p>
                             ) : (
                                  <ul className="space-y-3">
                                     {upcomingEvents.map(event => (
                                         <li key={event.id} className="bg-gray-900 p-3 rounded-lg border border-dark-border flex justify-between items-center">
                                             <div>
-                                                <span className="text-purple-400 font-bold block">{event.day} @ {event.time}</span>
+                                                <div className="text-purple-400 font-bold block">
+                                                     <span className="mr-2 text-xs opacity-80">{event.date}</span>
+                                                     <span>{event.day} @ {event.time}</span>
+                                                </div>
                                                 <span className="text-white font-medium block text-lg">{event.eventName}</span>
                                                 <span className="text-sm text-dark-text-secondary block">{event.details}</span>
                                             </div>
