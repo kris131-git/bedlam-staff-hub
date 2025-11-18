@@ -1,0 +1,5 @@
+{
+  "name": "Bedlam Ball Staff Hub",
+  "description": "An internal management application for festival staff to view attendee information and manage event, staff, and volunteer programmes.",
+  "requestFramePermissions": []
+}
