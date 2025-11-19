@@ -346,16 +346,45 @@ const App: React.FC = () => {
   const handleCreateEvent = async (event: Omit<ProgrammeEvent, 'id'>) => {
       const newEvent = { ...event, id: uuidv4() };
       setEvents(prev => [...prev, newEvent]);
-      const { error } = await supabase.from('events').insert(newEvent);
+      
+      let { error } = await supabase.from('events').insert(newEvent);
+      
+      // Retry logic for missing 'date' column
+      if (error && error.message.includes('column') && error.message.includes('date')) {
+          const { date, ...eventWithoutDate } = newEvent;
+          const retry = await supabase.from('events').insert(eventWithoutDate);
+          if (!retry.error) {
+              error = null;
+              alert("Note: Event saved but date was not persisted due to database schema mismatch. Please update SQL.");
+          } else {
+              error = retry.error;
+          }
+      }
+
       if (error) {
           setEvents(prev => prev.filter(e => e.id !== newEvent.id));
           alert(`Failed to save event: ${error.message}`);
       }
   };
+  
   const handleUpdateEvent = async (updated: ProgrammeEvent) => {
       const original = events.find(e => e.id === updated.id);
       setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
-      const { error } = await supabase.from('events').update(updated).eq('id', updated.id);
+      
+      let { error } = await supabase.from('events').update(updated).eq('id', updated.id);
+      
+      // Retry logic for missing 'date' column
+      if (error && error.message.includes('column') && error.message.includes('date')) {
+          const { date, ...eventWithoutDate } = updated;
+          const retry = await supabase.from('events').update(eventWithoutDate).eq('id', updated.id);
+          if (!retry.error) {
+              error = null; 
+              alert("Note: Event updated but date was not persisted due to database schema mismatch.");
+          } else {
+              error = retry.error;
+          }
+      }
+
       if (error && original) {
           setEvents(prev => prev.map(e => e.id === updated.id ? original : e));
           alert(`Failed to update event: ${error.message}`);
@@ -375,16 +404,45 @@ const App: React.FC = () => {
   const handleCreateStaffShift = async (shift: Omit<StaffShift, 'id'>) => {
       const newShift = { ...shift, id: uuidv4() };
       setStaffShifts(prev => [...prev, newShift]);
-      const { error } = await supabase.from('staff_shifts').insert(newShift);
+      
+      let { error } = await supabase.from('staff_shifts').insert(newShift);
+      
+      // Retry logic for missing 'date' column (Common issue if SQL not updated)
+      if (error && error.message.includes('column') && error.message.includes('date')) {
+          const { date, ...shiftWithoutDate } = newShift;
+          const retry = await supabase.from('staff_shifts').insert(shiftWithoutDate);
+          if (!retry.error) {
+              error = null;
+              alert("Warning: Shift saved but 'date' was not persisted (Database schema outdated).");
+          } else {
+              error = retry.error;
+          }
+      }
+
       if (error) {
           setStaffShifts(prev => prev.filter(s => s.id !== newShift.id));
           alert(`Failed to save staff shift: ${error.message}`);
       }
   };
+  
   const handleUpdateStaffShift = async (updated: StaffShift) => {
       const original = staffShifts.find(s => s.id === updated.id);
       setStaffShifts(prev => prev.map(s => s.id === updated.id ? updated : s));
-      const { error } = await supabase.from('staff_shifts').update(updated).eq('id', updated.id);
+      
+      let { error } = await supabase.from('staff_shifts').update(updated).eq('id', updated.id);
+
+      // Retry logic for missing 'date' column
+      if (error && error.message.includes('column') && error.message.includes('date')) {
+        const { date, ...shiftWithoutDate } = updated;
+        const retry = await supabase.from('staff_shifts').update(shiftWithoutDate).eq('id', updated.id);
+        if (!retry.error) {
+            error = null;
+            alert("Warning: Shift updated but 'date' was not persisted (Database schema outdated).");
+        } else {
+            error = retry.error;
+        }
+    }
+
       if (error && original) {
           setStaffShifts(prev => prev.map(s => s.id === updated.id ? original : s));
           alert(`Failed to update staff shift: ${error.message}`);
@@ -404,7 +462,21 @@ const App: React.FC = () => {
   const handleCreateVolunteerShift = async (shift: Omit<VolunteerShift, 'id'>) => {
       const newShift = { ...shift, id: uuidv4() };
       setVolunteerShifts(prev => [...prev, newShift]);
-      const { error } = await supabase.from('volunteer_shifts').insert(newShift);
+      
+      let { error } = await supabase.from('volunteer_shifts').insert(newShift);
+      
+      // Retry logic for missing 'date' column
+      if (error && error.message.includes('column') && error.message.includes('date')) {
+        const { date, ...shiftWithoutDate } = newShift;
+        const retry = await supabase.from('volunteer_shifts').insert(shiftWithoutDate);
+        if (!retry.error) {
+            error = null;
+            alert("Warning: Shift saved but 'date' was not persisted (Database schema outdated).");
+        } else {
+            error = retry.error;
+        }
+    }
+
       if (error) {
            setVolunteerShifts(prev => prev.filter(v => v.id !== newShift.id));
            alert(`Failed to save volunteer shift: ${error.message}`);
@@ -413,7 +485,21 @@ const App: React.FC = () => {
   const handleUpdateVolunteerShift = async (updated: VolunteerShift) => {
       const original = volunteerShifts.find(v => v.id === updated.id);
       setVolunteerShifts(prev => prev.map(v => v.id === updated.id ? updated : v));
-      const { error } = await supabase.from('volunteer_shifts').update(updated).eq('id', updated.id);
+      
+      let { error } = await supabase.from('volunteer_shifts').update(updated).eq('id', updated.id);
+      
+      // Retry logic for missing 'date' column
+      if (error && error.message.includes('column') && error.message.includes('date')) {
+        const { date, ...shiftWithoutDate } = updated;
+        const retry = await supabase.from('volunteer_shifts').update(shiftWithoutDate).eq('id', updated.id);
+        if (!retry.error) {
+            error = null;
+            alert("Warning: Shift updated but 'date' was not persisted (Database schema outdated).");
+        } else {
+            error = retry.error;
+        }
+    }
+
       if (error && original) {
           setVolunteerShifts(prev => prev.map(v => v.id === updated.id ? original : v));
           alert(`Failed to update volunteer shift: ${error.message}`);

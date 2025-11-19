@@ -121,6 +121,12 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
 
         const itemToLoad = item ? { ...item } : defaults[activeTab];
         
+        // Ensure date is at least today if missing
+        if (!itemToLoad.date) {
+            itemToLoad.date = today;
+            itemToLoad.day = dayName;
+        }
+
         // Parse time if exists
         if (itemToLoad.time && itemToLoad.time.includes(' - ')) {
             const [start, end] = itemToLoad.time.split(' - ');

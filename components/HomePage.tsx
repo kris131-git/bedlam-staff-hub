@@ -57,11 +57,16 @@ const HomePage: React.FC<HomePageProps> = ({
 
     // My Timetable Logic
     const getCurrentUserAttendeeId = () => {
-        // Try exact match first, then includes
-        const exact = attendees.find(a => a.name.toLowerCase() === user.username.toLowerCase());
+        const userName = user.username.toLowerCase();
+        // Try exact match first
+        const exact = attendees.find(a => a.name.toLowerCase() === userName);
         if (exact) return exact.id;
         
-        const fuzzy = attendees.find(a => a.name.toLowerCase().includes(user.username.toLowerCase()));
+        // Try fuzzy match (User's name is inside Attendee name OR Attendee name is inside User's name)
+        const fuzzy = attendees.find(a => {
+            const attendeeName = a.name.toLowerCase();
+            return attendeeName.includes(userName) || userName.includes(attendeeName);
+        });
         return fuzzy?.id;
     };
     const myId = getCurrentUserAttendeeId();
@@ -71,6 +76,7 @@ const HomePage: React.FC<HomePageProps> = ({
         ...volunteerShifts.filter(v => Array.isArray(v.attendeeIds) && v.attendeeIds.includes(myId || '')).map(v => ({ ...v, type: 'Volunteer' }))
     ].sort((a, b) => {
         // Sort logic: Date -> Time
+        // Handle missing date by treating it as "future" or just by time
         if (a.date && b.date) {
             const dateCompare = a.date.localeCompare(b.date);
             if (dateCompare !== 0) return dateCompare;
@@ -82,22 +88,26 @@ const HomePage: React.FC<HomePageProps> = ({
     const upcomingEvents = events
         .filter(e => e.stage === 'Main Stage')
         .filter(e => {
-            if (!e.date) return true; // If no date, show it anyway to be safe, or maybe filtering is better? Let's show it.
+            if (!e.date) return true; // If no date is saved (schema issue), show it so it doesn't disappear.
             try {
                 // Parse Time ("18:00 - 19:00") -> "18:00"
                 const startTimeStr = e.time.split('-')[0].trim();
                 // Safely construct date
                 const eventDateTime = new Date(`${e.date}T${startTimeStr}`);
-                if (isNaN(eventDateTime.getTime())) return true; // If invalid date, just show it
+                if (isNaN(eventDateTime.getTime())) return true; // If invalid date format, just show it
                 
                 const now = new Date();
-                return eventDateTime > now;
+                // Check if event is today or in the future. 
+                // We add 2 hours to 'now' to keep events visible while they are happening.
+                const cutoff = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+                return eventDateTime > cutoff;
             } catch (err) {
                 return true; // Fallback to showing if parsing fails
             }
         })
         .sort((a, b) => {
-             // Put undated events at the end
+             // Put undated events at the end, or sort normally
+             if (!a.date && !b.date) return a.time.localeCompare(b.time);
              if (!a.date) return 1;
              if (!b.date) return -1;
              
@@ -251,7 +261,7 @@ const HomePage: React.FC<HomePageProps> = ({
                                 <div className="text-center py-6">
                                     <p className="text-dark-text-secondary">No shifts assigned to your profile.</p>
                                     {!myId && (
-                                        <p className="text-xs text-yellow-500/80 mt-2">
+                                        <p className="text-xs text-yellow-500/80 mt-2 px-4">
                                             Note: Could not link your account <strong>{user.username}</strong> to an attendee profile. 
                                             Ensure an attendee exists with your name.
                                         </p>
@@ -302,7 +312,7 @@ const HomePage: React.FC<HomePageProps> = ({
                                         <li key={event.id} className="bg-gray-900 p-3 rounded-lg border border-dark-border flex justify-between items-center">
                                             <div>
                                                 <div className="text-purple-400 font-bold block">
-                                                     <span className="mr-2 text-xs opacity-80">{event.date || ''}</span>
+                                                     {event.date && <span className="mr-2 text-xs opacity-80">{event.date}</span>}
                                                      <span>{event.day} @ {event.time}</span>
                                                 </div>
                                                 <span className="text-white font-medium block text-lg">{event.eventName}</span>
