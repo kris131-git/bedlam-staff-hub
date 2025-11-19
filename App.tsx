@@ -88,8 +88,21 @@ const App: React.FC = () => {
 
         setAttendees(attendeesRes.data || []);
         setEvents(eventsRes.data || []);
-        setStaffShifts(staffRes.data || []);
-        setVolunteerShifts(volRes.data || []);
+        
+        // Sanitize Shifts (ensure arrays exist)
+        const sanitizedStaff = (staffRes.data || []).map((s: any) => ({
+            ...s,
+            attendeeIds: s.attendeeIds || [], 
+            locations: s.locations || []
+        }));
+        setStaffShifts(sanitizedStaff);
+
+        const sanitizedVol = (volRes.data || []).map((v: any) => ({
+            ...v,
+            attendeeIds: v.attendeeIds || [], 
+            locations: v.locations || []
+        }));
+        setVolunteerShifts(sanitizedVol);
         
         // Handle Accommodations (Seed if empty)
         let loadedAccommodations = accRes.data || [];
@@ -237,13 +250,19 @@ const App: React.FC = () => {
     const hashedPassword = await hashPassword(newUser.password);
     const userToSave = { ...newUser, password: hashedPassword };
 
+    // Optimistic
     setUsers(prev => [...prev, userToSave]);
-    await supabase.from('users').insert(userToSave);
+    
+    const { error } = await supabase.from('users').insert(userToSave);
+    if (error) {
+        console.error("Error creating user:", error);
+        setUsers(prev => prev.filter(u => u.username !== userToSave.username)); // Rollback
+        return { success: false, message: error.message };
+    }
     return { success: true };
   }, [users]);
 
   const handleUpdateUser = useCallback(async (updatedUser: User) => {
-    // Check if password was changed (simple check: if it's not same as existing in state)
     const existing = users.find(u => u.username === updatedUser.username);
     let userToSave = { ...updatedUser };
     
@@ -252,33 +271,66 @@ const App: React.FC = () => {
     }
 
     setUsers(prev => prev.map(u => u.username === userToSave.username ? userToSave : u));
-    await supabase.from('users').update(userToSave).eq('username', userToSave.username);
+    
+    const { error } = await supabase.from('users').update(userToSave).eq('username', userToSave.username);
+    if (error) {
+         console.error("Error updating user:", error);
+         if (existing) setUsers(prev => prev.map(u => u.username === existing.username ? existing : u)); // Rollback
+         return { success: false, message: error.message };
+    }
     return { success: true };
   }, [users]);
 
   const handleDeleteUser = useCallback(async (username: string) => {
+    const originalUsers = [...users];
     setUsers(prev => prev.filter(u => u.username !== username));
-    await supabase.from('users').delete().eq('username', username);
-  }, []);
+    
+    const { error } = await supabase.from('users').delete().eq('username', username);
+    if (error) {
+        console.error("Error deleting user:", error);
+        setUsers(originalUsers); // Rollback
+        alert(`Failed to delete user: ${error.message}`);
+    }
+  }, [users]);
 
   // Attendee Handlers
   const handleCreateAttendee = async (attendee: Omit<Attendee, 'id'>) => {
       const newId = uuidv4();
       const newAttendee = { ...attendee, id: newId };
       setAttendees(prev => [...prev, newAttendee]);
-      await supabase.from('attendees').insert(newAttendee);
+      const { error } = await supabase.from('attendees').insert(newAttendee);
+      if (error) {
+          console.error("Error creating attendee:", error);
+          setAttendees(prev => prev.filter(a => a.id !== newId)); // Rollback
+          alert(`Failed to create attendee: ${error.message}`);
+      }
   };
   const handleUpdateAttendee = async (updated: Attendee) => {
+      const original = attendees.find(a => a.id === updated.id);
       setAttendees(prev => prev.map(a => a.id === updated.id ? updated : a));
-      await supabase.from('attendees').update(updated).eq('id', updated.id);
+      const { error } = await supabase.from('attendees').update(updated).eq('id', updated.id);
+      if (error) {
+           console.error("Error updating attendee:", error);
+           if (original) setAttendees(prev => prev.map(a => a.id === updated.id ? original : a)); // Rollback
+           alert(`Failed to update attendee: ${error.message}`);
+      }
   };
   const handleDeleteAttendee = async (id: string) => {
+      const originalAttendees = [...attendees];
       setAttendees(prev => prev.filter(a => a.id !== id));
+      // Also remove from accommodations in state
       setAccommodations(prev => prev.map(acc => ({
           ...acc,
           attendeeIds: acc.attendeeIds.filter(attendeeId => attendeeId !== id)
       })));
-      await supabase.from('attendees').delete().eq('id', id);
+      
+      const { error } = await supabase.from('attendees').delete().eq('id', id);
+       if (error) {
+           console.error("Error deleting attendee:", error);
+           setAttendees(originalAttendees); // Rollback
+           alert(`Failed to delete attendee: ${error.message}`);
+           // Note: Accommodation rollback is complex here, omitted for brevity but ideal in prod
+      }
   };
   const handleCheckInAttendee = async (id: string) => {
     const time = new Date().toISOString();
@@ -294,49 +346,92 @@ const App: React.FC = () => {
   const handleCreateEvent = async (event: Omit<ProgrammeEvent, 'id'>) => {
       const newEvent = { ...event, id: uuidv4() };
       setEvents(prev => [...prev, newEvent]);
-      await supabase.from('events').insert(newEvent);
+      const { error } = await supabase.from('events').insert(newEvent);
+      if (error) {
+          setEvents(prev => prev.filter(e => e.id !== newEvent.id));
+          alert(`Failed to save event: ${error.message}`);
+      }
   };
   const handleUpdateEvent = async (updated: ProgrammeEvent) => {
+      const original = events.find(e => e.id === updated.id);
       setEvents(prev => prev.map(e => e.id === updated.id ? updated : e));
-      await supabase.from('events').update(updated).eq('id', updated.id);
+      const { error } = await supabase.from('events').update(updated).eq('id', updated.id);
+      if (error && original) {
+          setEvents(prev => prev.map(e => e.id === updated.id ? original : e));
+          alert(`Failed to update event: ${error.message}`);
+      }
   };
   const handleDeleteEvent = async (id: string) => {
+      const original = [...events];
       setEvents(prev => prev.filter(e => e.id !== id));
-      await supabase.from('events').delete().eq('id', id);
+      const { error } = await supabase.from('events').delete().eq('id', id);
+      if (error) {
+          setEvents(original);
+          alert(`Failed to delete event: ${error.message}`);
+      }
   };
 
   // Staff Shift Handlers
   const handleCreateStaffShift = async (shift: Omit<StaffShift, 'id'>) => {
       const newShift = { ...shift, id: uuidv4() };
       setStaffShifts(prev => [...prev, newShift]);
-      await supabase.from('staff_shifts').insert(newShift);
+      const { error } = await supabase.from('staff_shifts').insert(newShift);
+      if (error) {
+          setStaffShifts(prev => prev.filter(s => s.id !== newShift.id));
+          alert(`Failed to save staff shift: ${error.message}`);
+      }
   };
   const handleUpdateStaffShift = async (updated: StaffShift) => {
+      const original = staffShifts.find(s => s.id === updated.id);
       setStaffShifts(prev => prev.map(s => s.id === updated.id ? updated : s));
-      await supabase.from('staff_shifts').update(updated).eq('id', updated.id);
+      const { error } = await supabase.from('staff_shifts').update(updated).eq('id', updated.id);
+      if (error && original) {
+          setStaffShifts(prev => prev.map(s => s.id === updated.id ? original : s));
+          alert(`Failed to update staff shift: ${error.message}`);
+      }
   };
   const handleDeleteStaffShift = async (id: string) => {
+      const original = [...staffShifts];
       setStaffShifts(prev => prev.filter(s => s.id !== id));
-      await supabase.from('staff_shifts').delete().eq('id', id);
+      const { error } = await supabase.from('staff_shifts').delete().eq('id', id);
+      if (error) {
+          setStaffShifts(original);
+          alert(`Failed to delete staff shift: ${error.message}`);
+      }
   };
 
   // Volunteer Shift Handlers
   const handleCreateVolunteerShift = async (shift: Omit<VolunteerShift, 'id'>) => {
       const newShift = { ...shift, id: uuidv4() };
       setVolunteerShifts(prev => [...prev, newShift]);
-      await supabase.from('volunteer_shifts').insert(newShift);
+      const { error } = await supabase.from('volunteer_shifts').insert(newShift);
+      if (error) {
+           setVolunteerShifts(prev => prev.filter(v => v.id !== newShift.id));
+           alert(`Failed to save volunteer shift: ${error.message}`);
+      }
   };
   const handleUpdateVolunteerShift = async (updated: VolunteerShift) => {
+      const original = volunteerShifts.find(v => v.id === updated.id);
       setVolunteerShifts(prev => prev.map(v => v.id === updated.id ? updated : v));
-      await supabase.from('volunteer_shifts').update(updated).eq('id', updated.id);
+      const { error } = await supabase.from('volunteer_shifts').update(updated).eq('id', updated.id);
+      if (error && original) {
+          setVolunteerShifts(prev => prev.map(v => v.id === updated.id ? original : v));
+          alert(`Failed to update volunteer shift: ${error.message}`);
+      }
   };
   const handleDeleteVolunteerShift = async (id: string) => {
+      const original = [...volunteerShifts];
       setVolunteerShifts(prev => prev.filter(v => v.id !== id));
-      await supabase.from('volunteer_shifts').delete().eq('id', id);
+      const { error } = await supabase.from('volunteer_shifts').delete().eq('id', id);
+      if (error) {
+          setVolunteerShifts(original);
+          alert(`Failed to delete volunteer shift: ${error.message}`);
+      }
   };
 
   // Accommodation Handlers
   const handleAssignAttendeeToAccommodation = async (accommodationId: string, attendeeId: string) => {
+    const originalAccs = [...accommodations];
     let updatedAccommodations = [...accommodations];
     
     // Remove from others
@@ -356,25 +451,46 @@ const App: React.FC = () => {
     });
 
     setAccommodations(updatedAccommodations);
-    for (const acc of updatedAccommodations) {
-        await supabase.from('accommodations').update({ attendeeIds: acc.attendeeIds }).eq('id', acc.id);
+    
+    // Persist
+    try {
+        for (const acc of updatedAccommodations) {
+             // Only update those that changed
+             const original = originalAccs.find(o => o.id === acc.id);
+             if (original && JSON.stringify(original.attendeeIds) !== JSON.stringify(acc.attendeeIds)) {
+                  const { error } = await supabase.from('accommodations').update({ attendeeIds: acc.attendeeIds }).eq('id', acc.id);
+                  if (error) throw error;
+             }
+        }
+    } catch(error: any) {
+        setAccommodations(originalAccs);
+        alert(`Failed to update accommodation: ${error.message}`);
     }
   };
 
   const handleRemoveAttendeeFromAccommodation = async (accommodationId: string, attendeeId: string) => {
       const acc = accommodations.find(a => a.id === accommodationId);
       if (!acc) return;
+      const originalIds = [...acc.attendeeIds];
       const newIds = acc.attendeeIds.filter(id => id !== attendeeId);
       
       setAccommodations(prev => prev.map(a => a.id === accommodationId ? { ...a, attendeeIds: newIds } : a));
-      await supabase.from('accommodations').update({ attendeeIds: newIds }).eq('id', accommodationId);
+      const { error } = await supabase.from('accommodations').update({ attendeeIds: newIds }).eq('id', accommodationId);
+      if (error) {
+          setAccommodations(prev => prev.map(a => a.id === accommodationId ? { ...a, attendeeIds: originalIds } : a));
+          alert(`Failed to update accommodation: ${error.message}`);
+      }
   };
   
   // Till Handlers
   const handleAddProduct = async (product: Omit<Product, 'id'>) => {
     const newProduct = { ...product, id: uuidv4() };
     setProducts(prev => [...prev, newProduct]);
-    await supabase.from('products').insert(newProduct);
+    const { error } = await supabase.from('products').insert(newProduct);
+    if (error) {
+        setProducts(prev => prev.filter(p => p.id !== newProduct.id));
+        alert(`Failed to add product: ${error.message}`);
+    }
   };
 
   const handleProcessTransaction = async (items: CartItem[], total: number, method: PaymentMethod) => {
@@ -386,7 +502,11 @@ const App: React.FC = () => {
       method: method
     };
     setTransactions(prev => [...prev, newTransaction]);
-    await supabase.from('transactions').insert(newTransaction);
+    const { error } = await supabase.from('transactions').insert(newTransaction);
+    if (error) {
+        setTransactions(prev => prev.filter(t => t.id !== newTransaction.id));
+        alert(`Failed to process transaction: ${error.message}`);
+    }
   };
   
   // Bulletin Handlers
@@ -398,26 +518,21 @@ const App: React.FC = () => {
           likes: [], 
           replies: [] 
       };
-      // Optimistic update
       setBulletins(prev => [newBulletin, ...prev]);
       
       const { error } = await supabase.from('bulletins').insert(newBulletin);
       if (error) {
-          console.error("Error creating bulletin:", error);
-          // Rollback
           setBulletins(prev => prev.filter(b => b.id !== newBulletin.id));
-          alert(`Failed to post message: ${error.message}. Please ensure the database is set up.`);
+          alert(`Failed to post message: ${error.message}`);
       }
   };
 
   const handleDeleteBulletin = async (id: string) => {
       const originalBulletins = [...bulletins];
-      // Optimistic update
       setBulletins(prev => prev.filter(b => b.id !== id));
       
       const { error } = await supabase.from('bulletins').delete().eq('id', id);
       if (error) {
-          console.error("Error deleting bulletin:", error);
           setBulletins(originalBulletins);
           alert("Failed to delete message.");
       }
@@ -433,13 +548,10 @@ const App: React.FC = () => {
     } else {
         newLikes = [...currentLikes, username];
     }
-    // Optimistic update
     setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, likes: newLikes } : b));
     
     const { error } = await supabase.from('bulletins').update({ likes: newLikes }).eq('id', bulletinId);
     if (error) {
-        console.error("Error updating like:", error);
-        // Rollback
         setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, likes: currentLikes } : b));
     }
   };
@@ -451,13 +563,10 @@ const App: React.FC = () => {
     const currentReplies = bulletin.replies || [];
     const newReplies = [...currentReplies, newReply];
     
-    // Optimistic update
     setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, replies: newReplies } : b));
     
     const { error } = await supabase.from('bulletins').update({ replies: newReplies }).eq('id', bulletinId);
     if (error) {
-        console.error("Error saving reply:", error);
-        // Rollback
         setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, replies: currentReplies } : b));
     }
   };

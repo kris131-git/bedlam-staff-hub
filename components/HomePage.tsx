@@ -57,14 +57,18 @@ const HomePage: React.FC<HomePageProps> = ({
 
     // My Timetable Logic
     const getCurrentUserAttendeeId = () => {
-        const match = attendees.find(a => a.name.toLowerCase().includes(user.username.toLowerCase()));
-        return match?.id;
+        // Try exact match first, then includes
+        const exact = attendees.find(a => a.name.toLowerCase() === user.username.toLowerCase());
+        if (exact) return exact.id;
+        
+        const fuzzy = attendees.find(a => a.name.toLowerCase().includes(user.username.toLowerCase()));
+        return fuzzy?.id;
     };
     const myId = getCurrentUserAttendeeId();
     
     const myShifts = [
-        ...staffShifts.filter(s => s.attendeeIds.includes(myId || '')).map(s => ({ ...s, type: 'Staff' })),
-        ...volunteerShifts.filter(v => v.attendeeIds.includes(myId || '')).map(v => ({ ...v, type: 'Volunteer' }))
+        ...staffShifts.filter(s => Array.isArray(s.attendeeIds) && s.attendeeIds.includes(myId || '')).map(s => ({ ...s, type: 'Staff' })),
+        ...volunteerShifts.filter(v => Array.isArray(v.attendeeIds) && v.attendeeIds.includes(myId || '')).map(v => ({ ...v, type: 'Volunteer' }))
     ].sort((a, b) => {
         // Sort logic: Date -> Time
         if (a.date && b.date) {
@@ -78,24 +82,33 @@ const HomePage: React.FC<HomePageProps> = ({
     const upcomingEvents = events
         .filter(e => e.stage === 'Main Stage')
         .filter(e => {
-            if (!e.date) return false; // Must have a date to calculate if "Next"
+            if (!e.date) return true; // If no date, show it anyway to be safe, or maybe filtering is better? Let's show it.
             try {
                 // Parse Time ("18:00 - 19:00") -> "18:00"
                 const startTimeStr = e.time.split('-')[0].trim();
+                // Safely construct date
                 const eventDateTime = new Date(`${e.date}T${startTimeStr}`);
+                if (isNaN(eventDateTime.getTime())) return true; // If invalid date, just show it
+                
                 const now = new Date();
                 return eventDateTime > now;
             } catch (err) {
-                return false;
+                return true; // Fallback to showing if parsing fails
             }
         })
         .sort((a, b) => {
-            if (!a.date || !b.date) return 0;
-             // Parse Time
+             // Put undated events at the end
+             if (!a.date) return 1;
+             if (!b.date) return -1;
+             
              const startA = a.time.split('-')[0].trim();
              const startB = b.time.split('-')[0].trim();
              const dateA = new Date(`${a.date}T${startA}`);
              const dateB = new Date(`${b.date}T${startB}`);
+             
+             if (isNaN(dateA.getTime())) return 1;
+             if (isNaN(dateB.getTime())) return -1;
+             
              return dateA.getTime() - dateB.getTime();
         })
         .slice(0, 3);
@@ -235,7 +248,15 @@ const HomePage: React.FC<HomePageProps> = ({
                         </div>
                         <div className="p-4 flex-1 overflow-y-auto max-h-80">
                             {myShifts.length === 0 ? (
-                                <p className="text-dark-text-secondary text-center py-4">No shifts assigned to your profile.</p>
+                                <div className="text-center py-6">
+                                    <p className="text-dark-text-secondary">No shifts assigned to your profile.</p>
+                                    {!myId && (
+                                        <p className="text-xs text-yellow-500/80 mt-2">
+                                            Note: Could not link your account <strong>{user.username}</strong> to an attendee profile. 
+                                            Ensure an attendee exists with your name.
+                                        </p>
+                                    )}
+                                </div>
                             ) : (
                                 <ul className="space-y-3">
                                     {myShifts.map(shift => (
@@ -273,9 +294,7 @@ const HomePage: React.FC<HomePageProps> = ({
                         <div className="p-4 flex-1 overflow-y-auto max-h-80">
                             {upcomingEvents.length === 0 ? (
                                  <p className="text-dark-text-secondary text-center py-4">
-                                    {events.length > 0 ? "No upcoming events found." : "No events found."}
-                                    <br/>
-                                    <span className="text-xs italic opacity-70">(Ensure events have dates assigned)</span>
+                                    No upcoming main stage events found.
                                  </p>
                             ) : (
                                  <ul className="space-y-3">
@@ -283,7 +302,7 @@ const HomePage: React.FC<HomePageProps> = ({
                                         <li key={event.id} className="bg-gray-900 p-3 rounded-lg border border-dark-border flex justify-between items-center">
                                             <div>
                                                 <div className="text-purple-400 font-bold block">
-                                                     <span className="mr-2 text-xs opacity-80">{event.date}</span>
+                                                     <span className="mr-2 text-xs opacity-80">{event.date || ''}</span>
                                                      <span>{event.day} @ {event.time}</span>
                                                 </div>
                                                 <span className="text-white font-medium block text-lg">{event.eventName}</span>

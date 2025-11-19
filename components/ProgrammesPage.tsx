@@ -107,11 +107,15 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
         setAttendeeSearch('');
         setLocationSearch('');
 
+        // Default to Today
+        const today = new Date().toISOString().split('T')[0];
+        const dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+
         const defaults = {
             all: {},
-            events: { date: '', day: 'Friday', time: '', eventName: '', stage: '', details: '' },
-            staff: { date: '', day: 'Friday', time: '', attendeeIds: [], role: '', locations: [] },
-            volunteers: { date: '', day: 'Friday', time: '', attendeeIds: [], task: '', locations: [] },
+            events: { date: today, day: dayName, time: '', eventName: '', stage: '', details: '' },
+            staff: { date: today, day: dayName, time: '', attendeeIds: [], role: '', locations: [] },
+            volunteers: { date: today, day: dayName, time: '', attendeeIds: [], task: '', locations: [] },
             personal: {}
         };
 
@@ -320,6 +324,10 @@ const ProgrammesPage: React.FC<ProgrammesPageProps> = (props) => {
     // Auto-calculate Day based on Date
     const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const dateVal = e.target.value;
+        if (!dateVal) {
+             setCurrentItem((prev: any) => ({ ...prev, date: '', day: '' }));
+             return;
+        }
         const dayName = new Date(dateVal).toLocaleDateString('en-US', { weekday: 'long' });
         setCurrentItem((prev: any) => ({
             ...prev,
