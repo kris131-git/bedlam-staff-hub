@@ -110,7 +110,15 @@ const App: React.FC = () => {
 
         setProducts(prodRes.data || []);
         setTransactions(transRes.data || []);
-        setBulletins(bullRes.data || []);
+        
+        // Handle Bulletins - Sanitize null arrays
+        const sanitizedBulletins = (bullRes.data || []).map((b: any) => ({
+            ...b,
+            audience: b.audience || [],
+            likes: b.likes || [],
+            replies: b.replies || []
+        }));
+        setBulletins(sanitizedBulletins);
 
     } catch (error: any) {
         console.error("Error fetching data from Supabase:", error);
@@ -134,11 +142,24 @@ const App: React.FC = () => {
         { event: '*', schema: 'public', table: 'bulletins' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-             const newMsg = payload.new as BulletinMessage;
-             setBulletins(prev => [newMsg, ...prev]);
+             const newMsg = payload.new as any;
+             // Ensure new incoming messages also have arrays initialized
+             const sanitizedMsg: BulletinMessage = {
+                 ...newMsg,
+                 audience: newMsg.audience || [],
+                 likes: newMsg.likes || [],
+                 replies: newMsg.replies || []
+             };
+             setBulletins(prev => [sanitizedMsg, ...prev]);
           } else if (payload.eventType === 'UPDATE') {
-             const updatedMsg = payload.new as BulletinMessage;
-             setBulletins(prev => prev.map(b => b.id === updatedMsg.id ? updatedMsg : b));
+             const updatedMsg = payload.new as any;
+             const sanitizedMsg: BulletinMessage = {
+                 ...updatedMsg,
+                 audience: updatedMsg.audience || [],
+                 likes: updatedMsg.likes || [],
+                 replies: updatedMsg.replies || []
+             };
+             setBulletins(prev => prev.map(b => b.id === sanitizedMsg.id ? sanitizedMsg : b));
           } else if (payload.eventType === 'DELETE') {
              const deletedId = payload.old.id;
              setBulletins(prev => prev.filter(b => b.id !== deletedId));
@@ -369,18 +390,37 @@ const App: React.FC = () => {
   };
   
   // Bulletin Handlers
-  // Note: Realtime subscription now handles the UI state update, but we optimistically update here for instant feedback
   const handleCreateBulletin = async (msg: Omit<BulletinMessage, 'id' | 'timestamp'>) => {
-      const newBulletin = { ...msg, id: uuidv4(), timestamp: new Date().toISOString(), likes: [], replies: [] };
+      const newBulletin = { 
+          ...msg, 
+          id: uuidv4(), 
+          timestamp: new Date().toISOString(), 
+          likes: [], 
+          replies: [] 
+      };
       // Optimistic update
       setBulletins(prev => [newBulletin, ...prev]);
-      await supabase.from('bulletins').insert(newBulletin);
+      
+      const { error } = await supabase.from('bulletins').insert(newBulletin);
+      if (error) {
+          console.error("Error creating bulletin:", error);
+          // Rollback
+          setBulletins(prev => prev.filter(b => b.id !== newBulletin.id));
+          alert(`Failed to post message: ${error.message}. Please ensure the database is set up.`);
+      }
   };
 
   const handleDeleteBulletin = async (id: string) => {
+      const originalBulletins = [...bulletins];
       // Optimistic update
       setBulletins(prev => prev.filter(b => b.id !== id));
-      await supabase.from('bulletins').delete().eq('id', id);
+      
+      const { error } = await supabase.from('bulletins').delete().eq('id', id);
+      if (error) {
+          console.error("Error deleting bulletin:", error);
+          setBulletins(originalBulletins);
+          alert("Failed to delete message.");
+      }
   };
 
   const handleLikeBulletin = async (bulletinId: string, username: string) => {
@@ -395,18 +435,31 @@ const App: React.FC = () => {
     }
     // Optimistic update
     setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, likes: newLikes } : b));
-    await supabase.from('bulletins').update({ likes: newLikes }).eq('id', bulletinId);
+    
+    const { error } = await supabase.from('bulletins').update({ likes: newLikes }).eq('id', bulletinId);
+    if (error) {
+        console.error("Error updating like:", error);
+        // Rollback
+        setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, likes: currentLikes } : b));
+    }
   };
 
   const handleReplyBulletin = async (bulletinId: string, reply: Omit<BulletinReply, 'id' | 'timestamp'>) => {
     const newReply: BulletinReply = { ...reply, id: uuidv4(), timestamp: new Date().toISOString() };
     const bulletin = bulletins.find(b => b.id === bulletinId);
     if (!bulletin) return;
-    const newReplies = [...(bulletin.replies || []), newReply];
+    const currentReplies = bulletin.replies || [];
+    const newReplies = [...currentReplies, newReply];
     
     // Optimistic update
     setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, replies: newReplies } : b));
-    await supabase.from('bulletins').update({ replies: newReplies }).eq('id', bulletinId);
+    
+    const { error } = await supabase.from('bulletins').update({ replies: newReplies }).eq('id', bulletinId);
+    if (error) {
+        console.error("Error saving reply:", error);
+        // Rollback
+        setBulletins(prev => prev.map(b => b.id === bulletinId ? { ...b, replies: currentReplies } : b));
+    }
   };
 
   if (loading) {
