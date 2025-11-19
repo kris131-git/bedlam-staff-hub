@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { User, BulletinMessage, Attendee, ProgrammeEvent, StaffShift, VolunteerShift, Transaction, BulletinReply } from '../types';
 import { DeleteIcon } from './icons/DeleteIcon';
 import { CalendarDaysIcon } from './icons/CalendarDaysIcon';
@@ -33,7 +33,7 @@ const HomePage: React.FC<HomePageProps> = ({
     onCreateBulletin, onDeleteBulletin, onLikeBulletin, onReplyBulletin
 }) => {
     // Layout Order State
-    const [widgetOrder, setWidgetOrder] = useState<string[]>(['stats', 'timetable', 'upcoming', 'bulletin']);
+    const [widgetOrder, setWidgetOrder] = useState<string[]>(['stats', 'timetable', 'master', 'bulletin']);
     const [isEditingLayout, setIsEditingLayout] = useState(false);
     
     // Drag and Drop State
@@ -84,44 +84,62 @@ const HomePage: React.FC<HomePageProps> = ({
         return a.time.localeCompare(b.time);
     });
 
-    // --- UPCOMING EVENTS LOGIC ---
-    const upcomingEvents = events
-        .filter(e => e.stage === 'Main Stage')
-        .filter(e => {
-            if (!e.date) return true; // If no date is saved (schema issue), show it so it doesn't disappear.
-            try {
-                // Parse Time ("18:00 - 19:00") -> "18:00"
-                const startTimeStr = e.time.split('-')[0].trim();
-                // Safely construct date
-                const eventDateTime = new Date(`${e.date}T${startTimeStr}`);
-                if (isNaN(eventDateTime.getTime())) return true; // If invalid date format, just show it
-                
-                const now = new Date();
-                // Check if event is today or in the future. 
-                // We add 2 hours to 'now' to keep events visible while they are happening.
-                const cutoff = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-                return eventDateTime > cutoff;
-            } catch (err) {
-                return true; // Fallback to showing if parsing fails
-            }
-        })
-        .sort((a, b) => {
-             // Put undated events at the end, or sort normally
-             if (!a.date && !b.date) return a.time.localeCompare(b.time);
-             if (!a.date) return 1;
-             if (!b.date) return -1;
-             
-             const startA = a.time.split('-')[0].trim();
-             const startB = b.time.split('-')[0].trim();
-             const dateA = new Date(`${a.date}T${startA}`);
-             const dateB = new Date(`${b.date}T${startB}`);
-             
-             if (isNaN(dateA.getTime())) return 1;
-             if (isNaN(dateB.getTime())) return -1;
-             
-             return dateA.getTime() - dateB.getTime();
-        })
-        .slice(0, 3);
+    // --- MASTER PROGRAMME LOGIC ---
+    const masterSchedule = useMemo(() => {
+        const _events = events.map(e => ({
+            id: e.id,
+            type: 'Event',
+            rawDate: e.date,
+            day: e.day,
+            time: e.time,
+            primary: e.eventName,
+            secondary: e.stage,
+            tertiary: e.details
+        }));
+
+        const resolveNames = (ids: string[]) => {
+            if(!ids || ids.length === 0) return 'Unassigned';
+            const names = ids.map(id => attendees.find(a => a.id === id)?.name || 'Unknown');
+            return names.join(', ');
+        };
+
+        const _staff = staffShifts.map(s => ({
+            id: s.id,
+            type: 'Staff',
+            rawDate: s.date,
+            day: s.day,
+            time: s.time,
+            primary: resolveNames(s.attendeeIds),
+            secondary: s.role,
+            tertiary: (s.locations || []).join(', ')
+        }));
+
+        const _volunteers = volunteerShifts.map(v => ({
+            id: v.id,
+            type: 'Volunteer',
+            rawDate: v.date,
+            day: v.day,
+            time: v.time,
+            primary: resolveNames(v.attendeeIds),
+            secondary: v.task,
+            tertiary: (v.locations || []).join(', ')
+        }));
+
+        const all = [..._events, ..._staff, ..._volunteers];
+        
+        // Sort
+        return all.sort((a, b) => {
+             // Date sort first
+             if (a.rawDate && b.rawDate) {
+                 const d = a.rawDate.localeCompare(b.rawDate);
+                 if (d !== 0) return d;
+             }
+             // If one has date and other doesn't? Assume undated is ... later? or today? 
+             // Let's just use time if dates match or are missing.
+             return a.time.localeCompare(b.time);
+        });
+
+    }, [events, staffShifts, volunteerShifts, attendees]);
 
     // Bulletin Filtering
     const visibleBulletins = bulletins.filter(b => {
@@ -291,37 +309,59 @@ const HomePage: React.FC<HomePageProps> = ({
                         </div>
                     </div>
                 );
-            case 'upcoming':
+            case 'master':
                 return (
-                     <div key="upcoming" {...dragProps} className={`bg-dark-card rounded-xl border border-dark-border shadow overflow-hidden flex flex-col h-full relative ${dragClasses}`}>
+                     <div key="master" {...dragProps} className={`bg-dark-card rounded-xl border border-dark-border shadow overflow-hidden flex flex-col h-full relative ${dragClasses}`}>
                          {isDraggable && <div className="absolute top-2 right-2 text-brand-primary z-10"><DragHandleIcon /></div>}
                         <div className="p-4 border-b border-dark-border bg-gray-800/50">
                             <h2 className="text-lg font-bold text-white flex items-center">
                                 <CalendarDaysIcon />
-                                <span className="ml-2">Next on Main Stage</span>
+                                <span className="ml-2">Master Programme</span>
                             </h2>
                         </div>
-                        <div className="p-4 flex-1 overflow-y-auto max-h-80">
-                            {upcomingEvents.length === 0 ? (
-                                 <p className="text-dark-text-secondary text-center py-4">
-                                    No upcoming main stage events found.
-                                 </p>
-                            ) : (
-                                 <ul className="space-y-3">
-                                    {upcomingEvents.map(event => (
-                                        <li key={event.id} className="bg-gray-900 p-3 rounded-lg border border-dark-border flex justify-between items-center">
-                                            <div>
-                                                <div className="text-purple-400 font-bold block">
-                                                     {event.date && <span className="mr-2 text-xs opacity-80">{event.date}</span>}
-                                                     <span>{event.day} @ {event.time}</span>
+                        <div className="p-0 flex-1 overflow-y-auto max-h-96">
+                             <table className="min-w-full text-left text-sm">
+                                <thead className="bg-gray-900/50 text-dark-text-secondary font-medium sticky top-0 z-10 backdrop-blur-sm">
+                                    <tr>
+                                        <th className="px-4 py-2">Time</th>
+                                        <th className="px-4 py-2">Activity</th>
+                                        <th className="px-4 py-2 hidden sm:table-cell">Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-dark-border">
+                                    {masterSchedule.map(item => (
+                                        <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                <div className="font-bold text-brand-primary">{item.time}</div>
+                                                <div className="text-xs text-dark-text-secondary">{item.day}</div>
+                                                {item.rawDate && <div className="text-[10px] text-gray-500">{item.rawDate}</div>}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
+                                                        item.type === 'Event' ? 'bg-purple-500/20 text-purple-300' : 
+                                                        item.type === 'Staff' ? 'bg-blue-500/20 text-blue-300' : 
+                                                        'bg-yellow-500/20 text-yellow-300'
+                                                    }`}>{item.type}</span>
                                                 </div>
-                                                <span className="text-white font-medium block text-lg">{event.eventName}</span>
-                                                <span className="text-sm text-dark-text-secondary block">{event.details}</span>
-                                            </div>
-                                        </li>
+                                                <div className="font-medium text-white">{item.primary}</div>
+                                                <div className="text-xs text-gray-400 sm:hidden">{item.secondary}</div>
+                                            </td>
+                                            <td className="px-4 py-3 hidden sm:table-cell">
+                                                <div className="text-gray-300">{item.secondary}</div>
+                                                <div className="text-xs text-gray-500">{item.tertiary}</div>
+                                            </td>
+                                        </tr>
                                     ))}
-                                </ul>
-                            )}
+                                    {masterSchedule.length === 0 && (
+                                        <tr>
+                                            <td colSpan={3} className="px-4 py-8 text-center text-dark-text-secondary italic">
+                                                No scheduled items found.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                             </table>
                         </div>
                     </div>
                 );
